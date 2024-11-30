@@ -10,6 +10,14 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     // Push HEAD to start traversal
     revwalk.push_head()?;
 
+    // Sort commits by in topological order. This is different from the default,
+    // which is git2::Sort::NONE. With NONE the order is unspecified and may change
+    // according the comment for NONE in git2::Sort.
+    revwalk.set_sorting(git2::Sort::TOPOLOGICAL).unwrap();
+
+    let subdir_is_root = subdir == "/";
+    log::info!("subdir_is_root: {subdir_is_root}");
+
     for oid_result in revwalk {
         let oid = oid_result?;
         let commit = repo.find_commit(oid)?;
@@ -19,8 +27,11 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         let tree = commit.tree()?;
         log::info!("Tree: {}", tree.id());
 
-        // Check if the subdirectory exists in this tree
-        if tree.get_path(std::path::Path::new(subdir)).is_ok() {
+        if subdir_is_root {
+            // Always print for root
+            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
+        } else if tree.get_path(std::path::Path::new(subdir)).is_ok() {
+            // Print only if the subdirectory exists
             println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
         }
     }
