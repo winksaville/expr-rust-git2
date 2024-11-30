@@ -1,3 +1,5 @@
+use std::env;
+
 use git2::{Repository, Tree, Error};
 
 fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
@@ -62,8 +64,28 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn main() {
-    if let Err(e) = commits_for_subdir("/path/to/repo", "subdir/path") {
-        eprintln!("Error: {}", e);
+fn usage() {
+    eprintln!("Usage: {} <repo_path> <subdir>", env::args().next().unwrap());
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let repo_path = match env::args().nth(1) {
+        Some(path) => path,
+        None => {
+            usage();
+            return Err("Repository path not provided".into());
+        }
+    };
+    let subdir_path = match env::args().nth(2) {
+        Some(path) => path,
+        None => {
+            usage();
+            return Err("Subdirectory path not provided".into());
+        }
+    };
+    if let Err(e) = commits_for_subdir(&repo_path, &subdir_path) {
+        return Err(e.into());
     }
+
+    Ok(())
 }
