@@ -14,8 +14,10 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     let mut prev_tree: Option<Tree> = None;
 
     for oid_result in revwalk {
+        log::info!("commits_for_subdir: TOL prev_tree: {prev_tree:?}, oid_result: {oid_result:?}");
         let oid = oid_result?;
         let commit = repo.find_commit(oid)?;
+        log::info!("commits_for_subdir: oid {oid:?}, commit: {commit:?}");
 
         // Get the tree of the current commit
         let tree = commit.tree()?;
@@ -29,16 +31,23 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
                 &mut |delta, _| {
                     if let Some(path) = delta.old_file().path() {
                         if path.starts_with(subdir) {
+                            log::info!("commits_for_subdir: old_file starts with subidr, old_file: {path:?}");
                             found = true;
+                        } else {
+                            log::info!("commits_for_subdir: !subdir old_file: {path:?}");
                         }
                     }
                     if let Some(path) = delta.new_file().path() {
                         if path.starts_with(subdir) {
+                            log::info!("commits_for_subdir: new_file starts with subdir new_file: {path:?}");
                             found = true;
+                        } else {
+                            log::info!("commits_for_subdir: !subdir new_file(): {path:?}");
                         }
                     }
                     if found {
                         // Stop further diff processing if we find a match
+                        log::info!("commits_for_subdir: found stop processing");
                         return false;
                     }
                     true
@@ -60,8 +69,10 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
 
         // Update the previous tree
         prev_tree = Some(tree);
+        log::info!("commits_for_subdir: BOL new prev_tree: {prev_tree:?}");
     }
 
+    log::info!("commits_for_subdir:- repo_path: {repo_path}, subdir: {subdir})");
     Ok(())
 }
 
@@ -88,8 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     if let Err(e) = commits_for_subdir(&repo_path, &subdir_path) {
-        //eprintln!("Error: {}", e);
-        log::info!("main: Error: {e}");
+        eprintln!("Error: {e}");
         return Err(e.into());
     }
 
