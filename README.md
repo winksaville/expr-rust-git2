@@ -1,6 +1,11 @@
 # expr-rust-git2
 
-Setup workspace so we can eventually add multiple packages
+A workspace for experimenting with [git2-rs](https://github.com/rust-lang/git2-rs)
+a rust binding for [libgit2](https://libgit2.org/).
+
+Currently the workspace contains the following crates:
+* [`iterate-over-subdirs/README.md`](iterate-over-subdirs/README.md) - A simple crate that iterates over the subdirectories of a repo including the root directory.
+
 
 ## License
 
