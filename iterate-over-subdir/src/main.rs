@@ -1,6 +1,6 @@
-use std::{collections::HashMap, env};
+use std::env;
 
-use git2::{Repository, Error, Tree, DiffOptions, Oid, Commit};
+use git2::{Commit, DiffOptions, Error, Oid, Repository, Tree};
 
 fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     log::info!("commits_for_subdir:+ repo_path: {repo_path}, subdir: {subdir}");
@@ -59,11 +59,21 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(subdir);
 
-        let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))?;
-        log::info!("Processing commit: diff.deltas().len(): {}", diff.deltas().len());
+        let diff =
+            repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))?;
+        log::info!(
+            "Processing commit: diff.deltas().len(): {}",
+            diff.deltas().len()
+        );
         if diff.deltas().len() > 0 {
-            let parent_ids: Vec<Oid> = commit.parent_ids().collect();
-            println!("{}: {} -- parent_ids: {parent_ids:?}", commit.id(), commit.summary().unwrap_or("No summary"));
+            println!("{}: {}", oid, commit.summary().unwrap_or("No summary"));
+            if commit
+                .summary()
+                .unwrap_or("No summary")
+                .contains("Merge pull request")
+            {
+                let _ = pr_commits(repo_path, &oid);
+            }
         }
     }
 
@@ -71,49 +81,44 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn commit_relationships(repo_path: &str) -> Result<(), Error> {
-    println!("commit_relationships:+ repo_path: {}", repo_path);
+fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<(), Error> {
     let repo = Repository::open(repo_path)?;
-    let mut revwalk = repo.revwalk()?;
-    revwalk.push_head()?;
-    revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    let merge_commit = repo.find_commit(*merge_oid)?;
 
-    // Map to track parent-to-children relationships
-    let mut child_map: HashMap<String, Vec<String>> = HashMap::new();
+    // Ensure this is a merge commit
+    if merge_commit.parent_count() < 2 {
+        println!("  - Not a merge commit.");
+        return Ok(());
+    }
 
-    println!("\ncommit_relationships: print id, summary and parent_ids:");
-    for oid_result in revwalk {
-        let oid = oid_result?;
-        let commit = repo.find_commit(oid)?;
+    // Parent 1: Base branch
+    let base_oid = merge_commit.parent_id(0)?;
+    // Parent 2: Tip of the PR branch
+    let pr_tip_oid = merge_commit.parent_id(1)?;
 
-        for parent_id in commit.parent_ids() {
-            let parent_id_str = parent_id.to_string();
-            child_map
-                .entry(parent_id_str)
-                .or_default()
-                .push(commit.id().to_string());
-        }
-
+    // Traverse the PR branch from its tip back to the base
+    let mut pr_commit = repo.find_commit(pr_tip_oid)?;
+    println!("Commits in the PR branch:");
+    while pr_commit.id() != base_oid {
         println!(
-            "{}: {} -- parent_ids: {:?}",
-            commit.id(),
-            commit.summary().unwrap_or("No summary"),
-            commit.parent_ids().map(|id| id.to_string()).collect::<Vec<_>>()
+            "  - {}: {}",
+            pr_commit.id(),
+            pr_commit.summary().unwrap_or("No summary")
         );
+        if pr_commit.parent_count() == 0 {
+            break; // Reached the root, avoid infinite loop
+        }
+        pr_commit = pr_commit.parent(0)?;
     }
 
-    println!("\ncommit_relationships: print the child map:");
-    // Print the child map
-    for (parent, children) in &child_map {
-        println!("Parent {} has children: {:?}", parent, children);
-    }
-
-    println!("commit_relationships:- repo_path: {}", repo_path);
     Ok(())
 }
 
 fn usage() {
-    eprintln!("Usage: {} <repo_path> <subdir>", env::args().next().unwrap());
+    eprintln!(
+        "Usage: {} <repo_path> <subdir>",
+        env::args().next().unwrap()
+    );
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -139,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(e.into());
     }
 
-    commit_relationships(&repo_path)?;
+    //commit_relationships(&repo_path)?;
 
     log::info!("main:-");
     Ok(())
