@@ -1,4 +1,4 @@
-use std::env;
+use std::{collections::HashMap, env};
 
 use git2::{Repository, Error, Tree, DiffOptions, Oid, Commit};
 
@@ -71,6 +71,47 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
+fn commit_relationships(repo_path: &str) -> Result<(), Error> {
+    println!("commit_relationships:+ repo_path: {}", repo_path);
+    let repo = Repository::open(repo_path)?;
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+    revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+
+    // Map to track parent-to-children relationships
+    let mut child_map: HashMap<String, Vec<String>> = HashMap::new();
+
+    println!("\ncommit_relationships: print id, summary and parent_ids:");
+    for oid_result in revwalk {
+        let oid = oid_result?;
+        let commit = repo.find_commit(oid)?;
+
+        for parent_id in commit.parent_ids() {
+            let parent_id_str = parent_id.to_string();
+            child_map
+                .entry(parent_id_str)
+                .or_default()
+                .push(commit.id().to_string());
+        }
+
+        println!(
+            "{}: {} -- parent_ids: {:?}",
+            commit.id(),
+            commit.summary().unwrap_or("No summary"),
+            commit.parent_ids().map(|id| id.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    println!("\ncommit_relationships: print the child map:");
+    // Print the child map
+    for (parent, children) in &child_map {
+        println!("Parent {} has children: {:?}", parent, children);
+    }
+
+    println!("commit_relationships:- repo_path: {}", repo_path);
+    Ok(())
+}
+
 fn usage() {
     eprintln!("Usage: {} <repo_path> <subdir>", env::args().next().unwrap());
 }
@@ -97,6 +138,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: {e}");
         return Err(e.into());
     }
+
+    commit_relationships(&repo_path)?;
 
     log::info!("main:-");
     Ok(())
