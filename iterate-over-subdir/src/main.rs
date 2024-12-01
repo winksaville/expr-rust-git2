@@ -2,50 +2,39 @@ use std::env;
 
 use git2::{Repository, Error, Tree, DiffOptions, Oid, Commit};
 
-//fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
-//    log::info!("commits_for_subdir:+ repo_path: {repo_path}, subdir: {subdir}");
-//    let repo = Repository::open(repo_path)?;
-//    let mut revwalk = repo.revwalk()?;
-//
-//    // Push HEAD to start traversal
-//    revwalk.push_head()?;
-//
-//    // Sort commits by in topological order. This is different from the default,
-//    // which is git2::Sort::NONE. With NONE the order is unspecified and may change
-//    // according the comment for NONE in git2::Sort.
-//    revwalk.set_sorting(git2::Sort::TOPOLOGICAL).unwrap();
-//
-//    let subdir_is_root = subdir == "/";
-//    log::info!("subdir_is_root: {subdir_is_root}");
-//
-//    for oid_result in revwalk {
-//        let oid = oid_result?;
-//        let commit = repo.find_commit(oid)?;
-//        log::info!("Processing commit: {}", commit.id());
-//
-//        // Get the tree of the current commit
-//        let tree = commit.tree()?;
-//        log::info!("Tree: {}", tree.id());
-//
-//        if subdir_is_root {
-//            // Always print for root
-//            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
-//        } else if tree.get_path(std::path::Path::new(subdir)).is_ok() {
-//            // Print only if the subdirectory exists
-//            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
-//        }
-//    }
-//
-//    log::info!("commits_for_subdir:- repo_path: {repo_path}, subdir: {subdir}");
-//    Ok(())
-//}
-
 fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     log::info!("commits_for_subdir:+ repo_path: {repo_path}, subdir: {subdir}");
     let repo = Repository::open(repo_path)?;
     let mut revwalk = repo.revwalk()?;
     revwalk.push_head()?;
-    revwalk.set_sorting(git2::Sort::TIME)?;
+
+    // Sort commits by in topological order, by using this the associated
+    // commits of a "Merge pull request" precedes the associated commits.
+    // I also tried adding git2::Sort::TIME, but the commits were not in
+    // the expected order.
+    //
+    // For example with a local checkout of [rp-hal](https://github.com/rp-rs/rp-hal)
+    // and `revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;` a command from rp-hal root
+    // `iterate-over-subdir . rp235x-hal > iterate-over-subdir-topo.txt`
+    // the order was:
+    //   960afaf3cf6015f34334d03420391432dc8bc0c2: Merge pull request #841 from jannic/update-rp2350-uart
+    //   f84b76497648acb355ca5ca0baa1b760a3f337c0: Add uart_loopback example.
+    //   84b1753b4ed87ef65c5df77b2de73f8d0e6b3642: Port UART updates to rp235x-hal
+    //   2d815bf10790a0ddbe436a6ac9d2e6693bf742b1: Merge pull request #842 from jannic/update-rp2350-spi
+    //   1adf2b4ae186bbff19a1c9ee1d613f6ef0d2b031: Port SPI changes from rp2040-hal to rp235x-hal
+    //
+    // But with `revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;`
+    // with command `iterate-over-subdir . rp235x-hal > iterate-over-subdir-topo-time.txt`
+    // the order was:
+    //   960afaf3cf6015f34334d03420391432dc8bc0c2: Merge pull request #841 from jannic/update-rp2350-uart
+    //   f84b76497648acb355ca5ca0baa1b760a3f337c0: Add uart_loopback example.
+    //   2d815bf10790a0ddbe436a6ac9d2e6693bf742b1: Merge pull request #842 from jannic/update-rp2350-spi
+    //   1adf2b4ae186bbff19a1c9ee1d613f6ef0d2b031: Port SPI changes from rp2040-hal to rp235x-hal
+    //   84b1753b4ed87ef65c5df77b2de73f8d0e6b3642: Port UART updates to rp235x-hal
+    //
+    // And you can see the the 84b175 commit is "wrong" as it's parent is 960afaf.
+    //revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::Time)?; // wrong order
+    revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
 
     for oid_result in revwalk {
         let oid: Oid = oid_result?;
@@ -60,6 +49,12 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         };
         log::info!("Processing commit: parent_tree: {parent_tree:?}");
 
+        let parent_ids: Vec<Oid> = commit.parent_ids().collect();
+        log::info!("Processing commit: parent_ids: {parent_ids:?}");
+
+        //let child_ids: Vec<Oid> = commit.c().collect();
+        //log::info!("Processing commit: parent_ids: {parent_ids:?}");
+
         // Move outside of loop?
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(subdir);
@@ -67,7 +62,8 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut diff_opts))?;
         log::info!("Processing commit: diff.deltas().len(): {}", diff.deltas().len());
         if diff.deltas().len() > 0 {
-            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
+            let parent_ids: Vec<Oid> = commit.parent_ids().collect();
+            println!("{}: {} -- parent_ids: {parent_ids:?}", commit.id(), commit.summary().unwrap_or("No summary"));
         }
     }
 
