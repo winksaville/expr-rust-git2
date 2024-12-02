@@ -36,8 +36,15 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     //revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::Time)?; // wrong order
     revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
 
+    let mut last_pr_commit_oid: Option<Oid> = None;
     for oid_result in revwalk {
         let oid: Oid = oid_result?;
+        if Some(oid) == last_pr_commit_oid {
+            log::info!(
+                "Processing commit: {oid:?} - Skipping last commit of previous Merge pull request"
+            );
+            continue;
+        }
         let commit: Commit = repo.find_commit(oid)?;
         let tree: Tree = commit.tree()?;
         log::info!("Processing commit: id: {} tree: {tree:?}", commit.id());
@@ -52,9 +59,6 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         let parent_ids: Vec<Oid> = commit.parent_ids().collect();
         log::info!("Processing commit: parent_ids: {parent_ids:?}");
 
-        //let child_ids: Vec<Oid> = commit.c().collect();
-        //log::info!("Processing commit: parent_ids: {parent_ids:?}");
-
         // Move outside of loop?
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(subdir);
@@ -67,12 +71,9 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         );
         if diff.deltas().len() > 0 {
             println!("{}: {}", oid, commit.summary().unwrap_or("No summary"));
-            if commit
-                .summary()
-                .unwrap_or("No summary")
-                .contains("Merge pull request")
-            {
-                let _ = pr_commits(repo_path, &oid);
+            if commit.parent_count() > 1 {
+                last_pr_commit_oid = Some(pr_commits(repo_path, &oid)?);
+                log::info!("- last_pr_commit_oid: {last_pr_commit_oid:?}",);
             }
         }
     }
@@ -81,21 +82,19 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<(), Error> {
+fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Oid, Error> {
     let repo = Repository::open(repo_path)?;
     let merge_commit = repo.find_commit(*merge_oid)?;
 
     // Ensure this is a merge commit
-    if merge_commit.parent_count() < 2 {
-        println!("  - Not a merge commit.");
-        return Ok(());
-    }
+    assert!(merge_commit.parent_count() > 1);
 
     // Parent 1: Base branch
     let base_oid = merge_commit.parent_id(0)?;
     // Parent 2: Tip of the PR branch
     let pr_tip_oid = merge_commit.parent_id(1)?;
 
+    let mut prev_pr_commit: Option<Commit> = None;
     // Traverse the PR branch from its tip back to the base
     let mut pr_commit = repo.find_commit(pr_tip_oid)?;
     println!("Commits in the PR branch:");
@@ -106,12 +105,25 @@ fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<(), Error> {
             pr_commit.summary().unwrap_or("No summary")
         );
         if pr_commit.parent_count() == 0 {
-            break; // Reached the root, avoid infinite loop
+            return Err(Error::new(
+                git2::ErrorCode::Eof,
+                git2::ErrorClass::None,
+                "Done",
+            ));
         }
+        prev_pr_commit = Some(pr_commit.clone());
         pr_commit = pr_commit.parent(0)?;
     }
 
-    Ok(())
+    if let Some(prev_pr_commit) = prev_pr_commit {
+        Ok(prev_pr_commit.id())
+    } else {
+        Err(Error::new(
+            git2::ErrorCode::NotFound,
+            git2::ErrorClass::None,
+            "No commits in PR branch",
+        ))
+    }
 }
 
 fn usage() {
