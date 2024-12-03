@@ -72,8 +72,13 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         if diff.deltas().len() > 0 {
             println!("{}: {}", oid, commit.summary().unwrap_or("No summary"));
             if commit.parent_count() > 1 {
-                last_pr_commit_oid = Some(pr_commits(repo_path, &oid)?);
+                last_pr_commit_oid = pr_commits(repo_path, &oid)?;
                 log::info!("- last_pr_commit_oid: {last_pr_commit_oid:?}",);
+                if last_pr_commit_oid.is_none() {
+                    // This is a root commit
+                    println!("  - Hit a root commit");
+                    break;
+                }
             }
         }
     }
@@ -82,7 +87,10 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Oid, Error> {
+// This must be improved currently it only handles simple merges
+// and also need to decide what to do when root commits are encounterd
+// expecially if there are multiple roots.
+fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Option<Oid>, Error> {
     let repo = Repository::open(repo_path)?;
     let merge_commit = repo.find_commit(*merge_oid)?;
 
@@ -98,6 +106,10 @@ fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Oid, Error> {
     // Traverse the PR branch from its tip back to the base
     let mut pr_commit = repo.find_commit(pr_tip_oid)?;
     println!("Commits in the PR branch:");
+
+    // This doesn't work expect for simple merges where base_oid is the
+    // first parent of the merge commit and the last commit in the PR branch
+    // points to the base_oid. Also, this should be filtered by the subdir.
     while pr_commit.id() != base_oid {
         println!(
             "  - {}: {}",
@@ -105,18 +117,15 @@ fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Oid, Error> {
             pr_commit.summary().unwrap_or("No summary")
         );
         if pr_commit.parent_count() == 0 {
-            return Err(Error::new(
-                git2::ErrorCode::Eof,
-                git2::ErrorClass::None,
-                "Done",
-            ));
+            // Reached a root commit
+            return Ok(None);
         }
         prev_pr_commit = Some(pr_commit.clone());
         pr_commit = pr_commit.parent(0)?;
     }
 
     if let Some(prev_pr_commit) = prev_pr_commit {
-        Ok(prev_pr_commit.id())
+        Ok(Some(prev_pr_commit.id()))
     } else {
         Err(Error::new(
             git2::ErrorCode::NotFound,
