@@ -145,6 +145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "explr-merge-base"
+version = "0.1.0"
+dependencies = [
+ "custom_logger",
+ "git2",
+ "log",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
