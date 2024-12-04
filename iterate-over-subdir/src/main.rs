@@ -72,8 +72,8 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
         if diff.deltas().len() > 0 {
             println!("{}: {}", oid, commit.summary().unwrap_or("No summary"));
             if commit.parent_count() > 1 {
-                last_pr_commit_oid = pr_commits(repo_path, &oid)?;
-                log::info!("- last_pr_commit_oid: {last_pr_commit_oid:?}",);
+                last_pr_commit_oid = print_merge_commits(&repo, oid)?;
+                log::info!("last_pr_commit_oid: {last_pr_commit_oid:?}",);
                 if last_pr_commit_oid.is_none() {
                     // This is a root commit
                     println!("  - Hit a root commit");
@@ -87,10 +87,53 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     Ok(())
 }
 
+//fn collect_merge_commits(repo: &Repository, merge_commit_oid: Oid) -> Result<Vec<Commit>, Error> {
+// Print merge commits and return the last commit in the PR branch
+// if last commit is a root commit ???????????????
+fn print_merge_commits(repo: &Repository, merge_commit_oid: Oid) -> Result<Option<Oid>, Error> {
+    log::info!("print_merge_commits:+ merge_commit_oid: {merge_commit_oid}");
+    let merge_commit = repo.find_commit(merge_commit_oid)?;
+
+    // Get parent OIDs
+    let parent_oids: Vec<Oid> = merge_commit.parents().map(|p| p.id()).collect();
+
+    // Assume the first parent is the main branch (adjust if necessary)
+    //let main_parent_oid = parent_oids[0];
+
+    // Find the base commit (LCA)
+    let base_oid = repo.merge_base_many(&parent_oids)?;
+
+    // Prepare a set to collect commits
+    //let mut merge_commits = Vec::new();
+
+    // Collect commits from each merged branch (excluding main parent)
+    let mut last_commit_oid = None;
+    for &parent_oid in &parent_oids[1..] {
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push(parent_oid)?;
+        revwalk.hide(base_oid)?;
+
+        // Optional: Set sorting mode (e.g., topological order)
+        revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+
+        for commit_id_result in revwalk {
+            let commit_id = commit_id_result?;
+            let commit = repo.find_commit(commit_id)?;
+            //merge_commits.push(commit);
+            last_commit_oid = Some(commit_id);
+            println!("  - {}: {}", commit.id(), commit.summary().unwrap());
+        }
+    }
+
+    //Ok(merge_commits)
+    log::info!("print_merge_commits:-");
+    Ok(last_commit_oid)
+}
+
 // This must be improved currently it only handles simple merges
 // and also need to decide what to do when root commits are encounterd
 // expecially if there are multiple roots.
-fn pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Option<Oid>, Error> {
+fn _pr_commits(repo_path: &str, merge_oid: &Oid) -> Result<Option<Oid>, Error> {
     let repo = Repository::open(repo_path)?;
     let merge_commit = repo.find_commit(*merge_oid)?;
 
@@ -164,8 +207,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: {e}");
         return Err(e.into());
     }
-
-    //commit_relationships(&repo_path)?;
 
     log::info!("main:-");
     Ok(())
