@@ -1,6 +1,6 @@
 use std::env;
 
-use git2::{Repository, Error};
+use git2::{Error, Repository};
 
 fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
     log::info!("commits_for_subdir:+ repo_path: {repo_path}, subdir: {subdir}");
@@ -29,10 +29,18 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
 
         if subdir_is_root {
             // Always print for root
-            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
+            println!(
+                "{}: {}",
+                commit.id(),
+                commit.summary().unwrap_or("No summary")
+            );
         } else if tree.get_path(std::path::Path::new(subdir)).is_ok() {
             // Print only if the subdirectory exists
-            println!("{}: {}", commit.id(), commit.summary().unwrap_or("No summary"));
+            println!(
+                "{}: {}",
+                commit.id(),
+                commit.summary().unwrap_or("No summary")
+            );
         }
     }
 
@@ -41,7 +49,10 @@ fn commits_for_subdir(repo_path: &str, subdir: &str) -> Result<(), Error> {
 }
 
 fn usage() {
-    eprintln!("Usage: {} <repo_path> <subdir>", env::args().next().unwrap());
+    eprintln!(
+        "Usage: {} <repo_path> <subdir>",
+        env::args().next().unwrap()
+    );
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

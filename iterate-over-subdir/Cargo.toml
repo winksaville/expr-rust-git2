@@ -1,9 +1,10 @@
 [package]
 name = "iterate-over-subdir"
 version = "0.1.0"
-edition = "2021"
+edition = {workspace = true}
+authors = {workspace = true}
 
 [dependencies]
-git2 = "0.19.0"
-custom_logger = { git = "https://github.com/winksaville/custom_logger", version = "0.3.0" }
-log = "0.4.22"
+git2 = {workspace = true}
+custom_logger = {workspace = true}
+log = {workspace = true}
