@@ -1,11 +1,14 @@
-use std::env;
+use std::{env, error::Error};
 
-use git2::{Error, Repository};
+use git2::Repository;
 
-fn explr_merge(repo_path: &str, oid_strings: &Vec<String>) -> Result<(), Error> {
-    log::info!("explr_merge:+ repo_path: {repo_path}, oid_strings: {oid_strings:?}");
+fn merge_cmds(repo_path: &str, oid_strings: &Vec<String>) -> Result<(), Box<dyn Error>> {
+    log::info!("merge_cmds:+ repo_path: {repo_path}, oid_strings: {oid_strings:?}");
     let result = Repository::open(repo_path);
-    log::info!("explr_merge: result: is_ok={}", result.is_ok());
+    log::info!(
+        "merge_cmds Repository::open result: is_ok={}",
+        result.is_ok()
+    );
     let repo = result?;
 
     let mut oids = Vec::new();
@@ -14,27 +17,64 @@ fn explr_merge(repo_path: &str, oid_strings: &Vec<String>) -> Result<(), Error> 
         oids.push(oid);
     }
 
-    // Should be at least 2 oids
-    if oid_strings.len() < 2 {
-        return Err(Error::from_str("At least two OIDs are required"));
+    if oids.is_empty() {
+        return Err("We need at least one oid".into());
     }
 
-    let oid1 = git2::Oid::from_str(&oid_strings[0])?;
-    let oid2 = git2::Oid::from_str(&oid_strings[1])?;
-    log::info!("explr_merge: call merge_base oid1: {oid1}, oid2: {oid2}");
-    let result = repo.merge_base(oid1, oid2)?;
-    println!("merge_base result: {result:?}");
+    // If only one oid is provided the second oid is set to zero
+    let oid1 = if let Ok(oid) = git2::Oid::from_str(&oid_strings[0]) {
+        oid
+    } else {
+        return Err(format!("The first 'oid' isn't valid: '{}'", oid_strings[0]).into());
+    };
 
-    let result = repo.merge_base_many(&oids)?;
-    println!("merge_base_many result: {result:?}");
+    // Get the second oid, if it is not provided it is set to zero
 
-    let result = repo.merge_bases(oid1, oid2)?;
-    println!("merge_bases result: {result:?}");
+    //// Poor version as there two calls to git2::Oid::zero()
+    //let oid2 = match oid_strings.get(1) {
+    //    Some(oid_str) => match git2::Oid::from_str(oid_str) {
+    //        Ok(oid) => oid,
+    //        Err(_) => git2::Oid::zero(),
+    //    },
+    //    None => git2::Oid::zero(),
+    //};
 
-    let result = repo.merge_base_octopus(&oids)?;
-    println!("merge_base_octopus result: {result:?}");
+    // "Eager" evaluation, the git2::Oid::zero() is called even if the first oid is invalid.
+    // I don't like this version as to me it's not clear that the git2::Oid::zero()
+    // is always called, but it would be unless the compiler can prove there are no side
+    // effects.
+    //let oid2 = oid_strings
+    //    .get(1)
+    //    .and_then(|oid_str| git2::Oid::from_str(oid_str).ok())
+    //    .unwrap_or(git2::Oid::zero());
 
-    log::info!("explr_merge:- repo_path: {repo_path}, oid_strings: {oid_strings:?}");
+    // "Lazy" evaluation, the git2::Oid::zero() is called only if the first oid is invalid
+    let oid2 = oid_strings
+        .get(1)
+        .and_then(|oid_str| git2::Oid::from_str(oid_str).ok())
+        .unwrap_or_else(|| git2::Oid::zero());
+
+    log::info!("merge_cmds call merge_base oid1: {oid1}, oid2: {oid2}");
+    let result = repo.merge_base(oid1, oid2);
+    log::info!("merge_cmds merge_base result: {result:?}");
+
+    log::info!("merge_cmds call merge_base_many oids: {oids:?}");
+    let result = repo.merge_base_many(&oids);
+    log::info!("merge_cmds merge_base_many result: {result:?}");
+
+    log::info!("merge_cmds call merge_bases oid1: {oid1} oid2: {oid2}");
+    let result = repo.merge_bases(oid1, oid2);
+    log::info!("merge_cmds merge_bases result: {result:?}");
+
+    log::info!("merge_cmds call merge_base_otopus oids: {oids:?}");
+    let result = repo.merge_base_octopus(&oids);
+    log::info!("merge_cmds merge_base_octopus result: {result:?}");
+
+    log::info!("merge_cmds call merge_bases_many oids: {oids:?}");
+    let result = repo.merge_bases_many(&oids);
+    log::info!("merge_cmds merge_bases_many result: {result:?}");
+
+    log::info!("merge_cmds:-");
     Ok(())
 }
 
@@ -45,8 +85,8 @@ fn usage() {
     );
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    custom_logger::env_logger_init("none");
+fn main() -> Result<(), Box<dyn Error>> {
+    custom_logger::env_logger_init("info");
 
     log::info!("main:+");
 
@@ -71,12 +111,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         oid_strings.push(arg);
     }
 
-    // Call the explr_merge function
-    if let Err(e) = explr_merge(&repo_path, &oid_strings) {
-        eprintln!("Error: {e}");
-        return Err(e.into());
-    }
+    // Call the merge_cmds function
+    let result = merge_cmds(&repo_path, &oid_strings);
 
     log::info!("main:-");
-    Ok(())
+    result
 }

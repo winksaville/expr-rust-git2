@@ -1,12 +1,10 @@
 [package]
-name = "explr-git2-merge"
+name = "merge-cmds"
 version = "0.1.0"
-edition = "2021"
-authors = ["Wink Saville"]
+edition = {workspace = true}
+authors = {workspace = true}
 
 [dependencies]
-# Use latest git2-rs so we have merge_base_octopus
-git2 = { git = "https://github.com/rust-lang/git2-rs" }
-#git2 = "0.19.0"
-custom_logger = { git = "https://github.com/winksaville/custom_logger" }
-log = "0.4.22"
+git2 = {workspace = true}
+custom_logger = {workspace = true}
+log = {workspace = true}
