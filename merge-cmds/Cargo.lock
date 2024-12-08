@@ -145,7 +145,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "explr-merge"
+name = "explr-git2-merge"
 version = "0.1.0"
 dependencies = [
  "custom_logger",
@@ -355,15 +355,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
-name = "iterate-over-subdir"
-version = "0.1.0"
-dependencies = [
- "custom_logger",
- "git2",
- "log",
-]
-
-[[package]]
 name = "jobserver"
 version = "0.1.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -440,15 +431,6 @@ name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
-
-[[package]]
-name = "merge-cmds"
-version = "0.1.0"
-dependencies = [
- "custom_logger",
- "git2",
- "log",
-]
 
 [[package]]
 name = "once_cell"
