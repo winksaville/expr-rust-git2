@@ -48,11 +48,11 @@ fn merge_cmds(repo_path: &str, oid_strings: &Vec<String>) -> Result<(), Box<dyn 
     //    .and_then(|oid_str| git2::Oid::from_str(oid_str).ok())
     //    .unwrap_or(git2::Oid::zero());
 
-    // "Lazy" evaluation, the git2::Oid::zero() is called only if the first oid is invalid
+    // "Lazy" evaluation, the git2::Oid::zero is called only if the first oid is invalid
     let oid2 = oid_strings
         .get(1)
         .and_then(|oid_str| git2::Oid::from_str(oid_str).ok())
-        .unwrap_or_else(|| git2::Oid::zero());
+        .unwrap_or_else(git2::Oid::zero);
 
     log::info!("merge_cmds call merge_base oid1: {oid1}, oid2: {oid2}");
     let result = repo.merge_base(oid1, oid2);
