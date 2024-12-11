@@ -17,19 +17,18 @@ fn get_commits_between(repo_path: &str, oid_strings: &Vec<String>) -> Result<(),
         oids.push(oid);
     }
 
-    if oids.len() != 2 {
-        return Err(format!("We need two oids, there were {}", oids.len()).into());
+    if oids.is_empty() || oids.len() > 2 {
+        return Err(format!("We need one or two oids, there were {}", oids.len()).into());
     }
-
-    let from_commit_oid = oids[0];
-    let to_commit_oid = oids[1];
 
     let mut revwalk = repo.revwalk()?;
     revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
 
-    // Push the starting commit and hide the ending commit
-    revwalk.push(from_commit_oid)?;
-    revwalk.hide(to_commit_oid)?;
+    // Push the starting commit and hide the ending commit if present
+    revwalk.push(oids[0])?;
+    if oids.len() == 2 {
+        revwalk.hide(oids[1])?;
+    }
 
     // Collect the commits
     let commits = revwalk.filter_map(Result::ok).collect::<Vec<_>>();
@@ -42,16 +41,16 @@ fn get_commits_between(repo_path: &str, oid_strings: &Vec<String>) -> Result<(),
             commit.summary().unwrap_or(""),
             commit.parents().len(),
             parents.collect::<Vec<_>>(),
-            //commit.parents().collect::<Vec<_>>(),
         );
     }
 
+    log::info!("get_commits_between:- repo_path: {repo_path}, oid_strings: {oid_strings:?}");
     Ok(())
 }
 
 fn usage() {
     eprintln!(
-        "Usage: {} <repo_path> <from_oid> <to_oid>",
+        "Usage: {} <repo_path> <from_oid> {{<to_oid>}}",
         env::args().next().unwrap()
     );
 }
