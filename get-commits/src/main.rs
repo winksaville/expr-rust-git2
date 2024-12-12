@@ -1,5 +1,5 @@
-use std::{env, error::Error};
 use git2::{Commit, Oid, Repository, Tree};
+use std::{env, error::Error};
 
 fn collect_diff_files(
     repo: &Repository,
@@ -12,7 +12,8 @@ fn collect_diff_files(
     for delta in diff.deltas() {
         if let Some(path) = delta.new_file().path() {
             let path_str = path.to_string_lossy();
-            if path_str.starts_with("") { // Adjust for subdir filtering
+            if path_str.starts_with("") {
+                // Adjust for subdir filtering
                 modified_files.push(path_str.to_string());
             } else {
                 *non_matching_count += 1;
@@ -30,29 +31,86 @@ fn create_merged_baseline_tree<'repo>(
         return Err("At least two parents are required for a merge".into());
     }
 
-    // Assume the first parent is "ours" and the second is "theirs"
+    // Get our tree and their tree
     let our_tree = parents[0].tree()?;
     let their_tree = parents[1].tree()?;
 
-    // Attempt to find a common ancestor (base tree)
-    let ancestor = repo.merge_base(parents[0].id(), parents[1].id())
+    // Find the common ancestor (base tree)
+    let ancestor_tree = repo
+        .merge_base(parents[0].id(), parents[1].id())
         .ok()
         .and_then(|oid| repo.find_commit(oid).ok())
         .map(|commit| commit.tree())
         .transpose()?;
 
+    // Log tree IDs
+    println!(
+        "Ancestor Tree ID: {:?}\nOur Tree ID: {:?}\nTheir Tree ID: {:?}",
+        ancestor_tree.as_ref().map(|t| t.id()),
+        our_tree.id(),
+        their_tree.id(),
+    );
+
+    // Log diffs between trees
+    if let Some(ancestor_tree) = ancestor_tree.as_ref() {
+        log_tree_diff(repo, ancestor_tree, &our_tree, "Ancestor vs. Ours")?;
+        log_tree_diff(repo, ancestor_tree, &their_tree, "Ancestor vs. Theirs")?;
+    }
+
     // Perform the merge
     let mut merge_index = repo.merge_trees(
-        ancestor.as_ref().ok_or("No common ancestor found")?,
+        ancestor_tree.as_ref().ok_or("No common ancestor found")?,
         &our_tree,
         &their_tree,
         None,
     )?;
 
     // Write the result of the merge to a tree
-    Ok(repo.find_tree(merge_index.write_tree_to(repo)?)?)
+    let merged_tree = repo.find_tree(merge_index.write_tree_to(repo)?)?;
+
+    // Log diff between ancestor and merge result
+    if let Some(ancestor_tree) = ancestor_tree.as_ref() {
+        log_tree_diff(
+            repo,
+            ancestor_tree,
+            &merged_tree,
+            "Ancestor vs. Merge Result",
+        )?;
+    }
+
+    Ok(merged_tree)
 }
 
+fn log_tree_diff(
+    repo: &Repository,
+    from_tree: &Tree,
+    to_tree: &Tree,
+    label: &str,
+) -> Result<(), Box<dyn Error>> {
+    println!("Diff: {label}");
+    let diff = repo.diff_tree_to_tree(Some(from_tree), Some(to_tree), None)?;
+
+    diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
+        println!(
+            "  File: {:?} -> {:?} | Status: {:?}",
+            delta.old_file().path().map(|p| p.to_string_lossy()),
+            delta.new_file().path().map(|p| p.to_string_lossy()),
+            delta.status()
+        );
+
+        if let Some(hunk) = hunk {
+            println!("    Hunk: {}", String::from_utf8_lossy(hunk.header()));
+        }
+
+        print!(
+            "{}",
+            std::str::from_utf8(line.content()).unwrap_or("[INVALID UTF-8]")
+        );
+        true
+    })?;
+
+    Ok(())
+}
 
 fn process_commit(repo: &Repository, commit: &Commit) -> Result<(), Box<dyn Error>> {
     let commit_tree = commit.tree()?;
@@ -64,11 +122,23 @@ fn process_commit(repo: &Repository, commit: &Commit) -> Result<(), Box<dyn Erro
     if parents.len() > 1 {
         // Handle merge commits
         let merged_baseline_tree = create_merged_baseline_tree(repo, &parents)?;
-        collect_diff_files(repo, Some(&merged_baseline_tree), Some(&commit_tree), &mut modified_files, &mut non_matching_count)?;
+        collect_diff_files(
+            repo,
+            Some(&merged_baseline_tree),
+            Some(&commit_tree),
+            &mut modified_files,
+            &mut non_matching_count,
+        )?;
     } else if let Some(parent) = parents.first() {
         // Handle non-merge commits
         let parent_tree = parent.tree()?;
-        collect_diff_files(repo, Some(&parent_tree), Some(&commit_tree), &mut modified_files, &mut non_matching_count)?;
+        collect_diff_files(
+            repo,
+            Some(&parent_tree),
+            Some(&commit_tree),
+            &mut modified_files,
+            &mut non_matching_count,
+        )?;
     }
 
     println!(
@@ -97,7 +167,7 @@ fn get_commits(repo_path: &str, oid_strings: &[String]) -> Result<(), Box<dyn Er
         .map(|oid_str| Oid::from_str(oid_str))
         .collect::<Result<Vec<_>, _>>()?;
 
-    if oids.len() < 1 || oids.len() > 2 {
+    if oids.is_empty() || oids.len() > 2 {
         return Err(format!("We need one or two oids, but got {}", oids.len()).into());
     }
 
@@ -132,7 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut args_iter = env::args();
     args_iter.next(); // Skip executable name
 
-    let repo_path = args_iter.next().ok_or_else(|| "Repository path not provided")?;
+    let repo_path = args_iter.next().ok_or("Repository path not provided")?;
     let oid_strings: Vec<_> = args_iter.collect();
 
     if oid_strings.is_empty() {
