@@ -30,18 +30,47 @@ fn get_commits_between(repo_path: &str, oid_strings: &Vec<String>) -> Result<(),
         revwalk.hide(oids[1])?;
     }
 
-    // Collect the commits
-    let commits = revwalk.filter_map(Result::ok).collect::<Vec<_>>();
-    for commit in commits {
+    //let commits = revwalk.filter_map(Result::ok).collect::<Vec<_>>();
+    for commit in revwalk.filter_map(Result::ok) {
         let commit = repo.find_commit(commit)?;
-        let parents = commit.parents();
+        let commit_tree = commit.tree()?;
+        let parents = commit.parents().collect::<Vec<_>>();
+
+        let mut has_patch = false;
+        let mut modified_files = Vec::new();
+        let mut non_matching_count = 0;
+
+        for parent in &parents {
+            let parent_tree = parent.tree()?;
+            let diff = repo.diff_tree_to_tree(Some(&parent_tree), Some(&commit_tree), None)?;
+
+            for delta in diff.deltas() {
+                has_patch = true;
+                if let Some(path) = delta.new_file().path() {
+                    let path_str = path.to_string_lossy();
+                    if path_str.starts_with("") { // ATM match all files in the future take a subdir parameter
+                        modified_files.push(path_str.to_string());
+                    } else {
+                        non_matching_count += 1;
+                    }
+                }
+            }
+        }
+
         println!(
-            "commit id: {}, summary: '{}', parent.len: {}, parents: {:?}",
+            "commit id: {}, summary: '{}', parent.len: {}, has_patch: {}, modified_count {:?}, non_matching_count: {}, parents: {:?}",
             commit.id(),
             commit.summary().unwrap_or(""),
-            commit.parents().len(),
-            parents.collect::<Vec<_>>(),
+            parents.len(),
+            has_patch,
+            modified_files.len(),
+            non_matching_count,
+            parents.iter().map(|p| p.id()).collect::<Vec<_>>(),
         );
+
+        for file in modified_files {
+            println!("  file: {}", file);
+        }
     }
 
     log::info!("get_commits_between:- repo_path: {repo_path}, oid_strings: {oid_strings:?}");
