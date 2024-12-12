@@ -1,5 +1,5 @@
 use std::{env, error::Error};
-use git2::{Commit, Diff, Oid, Repository, Tree};
+use git2::{Commit, Oid, Repository, Tree};
 
 fn collect_diff_files(
     repo: &Repository,
@@ -22,16 +22,37 @@ fn collect_diff_files(
     Ok(())
 }
 
-fn create_merged_baseline_tree(repo: &Repository, parents: &[Commit]) -> Result<Tree, Box<dyn Error>> {
-    let mut index = repo.index()?;
-    index.read_tree(&parents[0].tree()?)?;
-    for parent in &parents[1..] {
-        let parent_tree = parent.tree()?;
-        repo.merge_trees(index.write_tree_to(repo)?.as_object(), parent_tree.as_object(), None)?;
-        index.read_tree(&parent_tree)?;
+fn create_merged_baseline_tree<'repo>(
+    repo: &'repo Repository,
+    parents: &[Commit<'repo>],
+) -> Result<Tree<'repo>, Box<dyn Error>> {
+    if parents.len() < 2 {
+        return Err("At least two parents are required for a merge".into());
     }
-    Ok(repo.find_tree(index.write_tree_to(repo)?)?)
+
+    // Assume the first parent is "ours" and the second is "theirs"
+    let our_tree = parents[0].tree()?;
+    let their_tree = parents[1].tree()?;
+
+    // Attempt to find a common ancestor (base tree)
+    let ancestor = repo.merge_base(parents[0].id(), parents[1].id())
+        .ok()
+        .and_then(|oid| repo.find_commit(oid).ok())
+        .map(|commit| commit.tree())
+        .transpose()?;
+
+    // Perform the merge
+    let mut merge_index = repo.merge_trees(
+        ancestor.as_ref().ok_or("No common ancestor found")?,
+        &our_tree,
+        &their_tree,
+        None,
+    )?;
+
+    // Write the result of the merge to a tree
+    Ok(repo.find_tree(merge_index.write_tree_to(repo)?)?)
 }
+
 
 fn process_commit(repo: &Repository, commit: &Commit) -> Result<(), Box<dyn Error>> {
     let commit_tree = commit.tree()?;
