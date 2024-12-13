@@ -29,200 +29,194 @@ I have a couple other things to investigate:
       }
   ```
 
+This looks pretty good but there is at least one problem,
+merge commits are not handled properly if there is an associated
+change. I beleive this happens when git detects there is a confict
+and the user resolves it during the merge. This is what I think is
+happening and in this converstion with
+[ChatGPT40](https://chatgpt.com/share/675c90d2-65f4-800c-9652-69a22ea29f33)
+it agreed with me.
 
+The other signficcant thing I learned is that `git show <sha1>` shows
+the changes for a single commit! For example; here I showing the output
+for the merge commit `a9b91ea50655ace5067da8dec488681c9d53ebae` which does
+resolve a conficit and the changes are shown. But if you look at the output
+from my get-commits below you will see that the changes are **not** shown.
+
+I'm going to investigate this further by implementing a `git show` command
+using git2-rs in this workspace.
+```
+wink@3900x 24-12-13T19:30:46.674Z:~/prgs/rpi-pico/myrepos/rp-hal (wip-release-rp235x-hal-v0.3.0)
+$ git --no-pager show a9b91ea50655ace5067da8dec488681c9d53ebae
+commit a9b91ea50655ace5067da8dec488681c9d53ebae
+Merge: 2987210 c0679ca
+Author: Jan Niehusmann <jan@gondor.com>
+Date:   Sat Feb 24 13:08:44 2024 +0100
+
+    Merge pull request #776 from jannic/as_ptr
+    
+    Use as_ptr() to retrieve pointer to register
+
+diff --cc rp2040-hal/src/adc.rs
+index b5188cd,d12a748..b7d22fc
+--- a/rp2040-hal/src/adc.rs
++++ b/rp2040-hal/src/adc.rs
+@@@ -791,22 -694,8 +791,22 @@@ impl<'a, Word> AdcFifo<'a, Word> 
+      /// The [`DmaReadTarget`] returned by this function can be used to initiate DMA transfers
+      /// reading from the ADC.
+      pub fn dma_read_target(&self) -> DmaReadTarget<Word> {
+-         DmaReadTarget(self.adc.device.fifo() as *const _ as u32, PhantomData)
++         DmaReadTarget(self.adc.device.fifo().as_ptr() as u32, PhantomData)
+      }
+ +
+ +    /// Trigger a single conversion
+ +    ///
+ +    /// Ignored unless in [`AdcFifoBuilder::manual_trigger`] mode.
+ +    pub fn trigger(&mut self) {
+ +        self.adc.device.cs().modify(|_, w| w.start_once().set_bit());
+ +    }
+ +
+ +    /// Check if ADC is ready for the next conversion trigger
+ +    ///
+ +    /// Only useful in [`AdcFifoBuilder::manual_trigger`] mode.
+ +    pub fn is_ready(&self) -> bool {
+ +        self.adc.device.cs().read().ready().bit_is_set()
+ +    }
+  }
+  
+  impl<'a> AdcFifo<'a, u16> {
+wink@3900x 24-12-13T20:09:40.205Z:~/prgs/rpi-pico/myrepos/rp-hal (wip-release-rp235x-hal-v0.3.0)
+```
 
 # Run
 
-Hereis an example of running the program `get-commits` with two commit ids:
+Here is an example of running the program `get-commits` with two commit ids, using one
+increases the lines to the initial commit:
 
 ```sh
-wink@3900x 24-12-12T00:11:04.244Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (get-commits)
-$ RUST_LOG=info cargo run .. 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9 985279818e22f81bbcd6860f74df34fca3f04c49
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
-     Running `/home/wink/prgs/rust/myrepos/expr-rust-git2/target/debug/get-commits .. 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9 985279818e22f81bbcd6860f74df34fca3f04c49`
-[2024-12-12T00:12:28.818842332Z INFO  get_commits   90  1] main:+
-[2024-12-12T00:12:28.818867129Z INFO  get_commits  108  1] arg: 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9
-[2024-12-12T00:12:28.818872349Z INFO  get_commits  108  1] arg: 985279818e22f81bbcd6860f74df34fca3f04c49
-[2024-12-12T00:12:28.818877118Z INFO  get_commits    6  1] get_commits_between:+ repo_path: .., oid_strings: ["8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9", "985279818e22f81bbcd6860f74df34fca3f04c49"]
-[2024-12-12T00:12:28.826122852Z INFO  get_commits    8  1] get_commits_between: Repository::open result: is_ok=true
-commit id: 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9, summary: 'chore: Cleanup clippy warnings', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [7c302d4b9ea64bd6c14da5b5c56bfe1396967fee]
-  file: merge-cmds/src/main.rs
-commit id: 7c302d4b9ea64bd6c14da5b5c56bfe1396967fee, summary: 'feat: merge-cmds running', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [78d0d64a2f08455772c47e1fb5df80d7bf2f1958]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-commit id: 78d0d64a2f08455772c47e1fb5df80d7bf2f1958, summary: 'Add merge-cmds', parent.len: 2, has_patch: true, modified_count 18, non_matching_count: 0, parents: [bc776c430404342d2754bd880406b7af56abb618, 6fabd32f84253674cd6c5f122ed5998201018062]
-  file: merge-cmds/Cargo.lock
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/LICENSE-APACHE
-  file: merge-cmds/LICENSE-MIT
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-  file: .gitignore
-  file: Cargo.lock
-  file: Cargo.toml
-  file: LICENSE-APACHE
-  file: LICENSE-MIT
-  file: README.md
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/README.md
-  file: iterate-over-subdir/src/main.rs
-commit id: 6fabd32f84253674cd6c5f122ed5998201018062, summary: 'restructure-into-merge-cmds', parent.len: 1, has_patch: true, modified_count 13, non_matching_count: 0, parents: [0c26ea66d172b7f6f4e22b4bd12bbf2a401eb18c]
-  file: .gitignore
-  file: Cargo.lock
-  file: Cargo.toml
-  file: LICENSE-APACHE
-  file: LICENSE-MIT
-  file: README.md
-  file: merge-cmds/Cargo.lock
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/LICENSE-APACHE
-  file: merge-cmds/LICENSE-MIT
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-  file: src/main.rs
-commit id: 0c26ea66d172b7f6f4e22b4bd12bbf2a401eb18c, summary: 'feat: Tag as v0.1.0', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [cfeec0b233856b86e547a213a09206be0283c86c]
-  file: README.md
-commit id: cfeec0b233856b86e547a213a09206be0283c86c, summary: 'feat: Add a main.rs that uses various merge_basexxx fn of git2', parent.len: 1, has_patch: true, modified_count 4, non_matching_count: 0, parents: [a666969b6d98f74eb66cbc99f220ec57ca366044]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: README.md
-  file: src/main.rs
-commit id: a666969b6d98f74eb66cbc99f220ec57ca366044, summary: 'feat: Initial Commit', parent.len: 0, has_patch: false, modified_count 0, non_matching_count: 0, parents: []
-commit id: bc776c430404342d2754bd880406b7af56abb618, summary: 'feat: Share dependencies', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [971896646014c778239028407c0848ea631e0b65]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/src/main.rs
-commit id: 971896646014c778239028407c0848ea631e0b65, summary: 'Merge pull request #2 from winksaville/explr-merge-base', parent.len: 2, has_patch: true, modified_count 5, non_matching_count: 0, parents: [985279818e22f81bbcd6860f74df34fca3f04c49, ed61a78b4fd91b6b767a3d92261b1f273e58988f]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-commit id: ed61a78b4fd91b6b767a3d92261b1f273e58988f, summary: 'feat: Add explr-merge-base', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [985279818e22f81bbcd6860f74df34fca3f04c49]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-[2024-12-12T00:12:28.827916337Z INFO  get_commits   76  1] get_commits_between:- repo_path: .., oid_strings: ["8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9", "985279818e22f81bbcd6860f74df34fca3f04c49"]
-[2024-12-12T00:12:28.827950381Z INFO  get_commits  115  1] main:-
-wink@3900x 24-12-12T00:12:28.832Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (get-commits)
-```
+wink@3900x 24-12-13T19:58:42.212Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (gpt4o-take-on-handling-merge-commits)
+$ RUST_LOG=info cargo run -- ~/prgs/rpi-pico/myrepos/rp-hal a9b91ea50655ace5067da8dec488681c9d53ebae c11fed9b0dc11f19dc19f89e0c0b79e09c2f65e3
+   Compiling get-commits v0.1.0 (/home/wink/prgs/rust/myrepos/expr-rust-git2/get-commits)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.88s
+     Running `/home/wink/prgs/rust/myrepos/expr-rust-git2/target/debug/get-commits /home/wink/prgs/rpi-pico/myrepos/rp-hal a9b91ea50655ace5067da8dec488681c9d53ebae c11fed9b0dc11f19dc19f89e0c0b79e09c2f65e3`
+[2024-12-13T19:59:01.622551742Z INFO  get_commits  195  1] main:+
+[2024-12-13T19:59:01.622584193Z INFO  get_commits  157  1] get_commits:+ repo_path: /home/wink/prgs/rpi-pico/myrepos/rp-hal, oid_strings: ["a9b91ea50655ace5067da8dec488681c9d53ebae", "c11fed9b0dc11f19dc19f89e0c0b79e09c2f65e3"]
+Diff: merged_baseline_tree vs commit_tree
+Diff: merged_baseline_tree vs commit_tree END
+commit id: a9b91ea50655ace5067da8dec488681c9d53ebae, summary: 'Merge pull request #776 from jannic/as_ptr', parent.len: 2, modified_count: 0, non_matching_count: 0, parents: [29872106d82b0457dffaf688c89c78d8bc3a904d, c0679ca582ea355181db5daf5145d1dd1de5ac2b]
+Diff: parent vs commit_tree
+ diff --git a/rp2040-hal/src/adc.rs b/rp2040-hal/src/adc.rs
+index 3894bcc..d12a748 100644
+--- a/rp2040-hal/src/adc.rs
++++ b/rp2040-hal/src/adc.rs
+ @@ -694,7 +694,7 @@ impl<'a, Word> AdcFifo<'a, Word> {
+     /// The [`DmaReadTarget`] returned by this function can be used to initiate DMA transfers
+     /// reading from the ADC.
+     pub fn dma_read_target(&self) -> DmaReadTarget<Word> {
+-        DmaReadTarget(self.adc.device.fifo() as *const _ as u32, PhantomData)
++        DmaReadTarget(self.adc.device.fifo().as_ptr() as u32, PhantomData)
+     }
+ }
+ 
+ diff --git a/rp2040-hal/src/pio.rs b/rp2040-hal/src/pio.rs
+index c38e7dd..b54840a 100644
+--- a/rp2040-hal/src/pio.rs
++++ b/rp2040-hal/src/pio.rs
+ @@ -1432,7 +1432,7 @@ unsafe impl<SM: ValidStateMachine> ReadTarget for Rx<SM> {
+ 
+     fn rx_address_count(&self) -> (u32, u32) {
+         (
+-            unsafe { &*self.block }.rxf(SM::id()) as *const _ as u32,
++            unsafe { &*self.block }.rxf(SM::id()).as_ptr() as u32,
+             u32::MAX,
+         )
+     }
+ @@ -1626,7 +1626,7 @@ unsafe impl<SM: ValidStateMachine> WriteTarget for Tx<SM> {
+ 
+     fn tx_address_count(&mut self) -> (u32, u32) {
+         (
+-            unsafe { &*self.block }.txf(SM::id()) as *const _ as u32,
++            unsafe { &*self.block }.txf(SM::id()).as_ptr() as u32,
+             u32::MAX,
+         )
+     }
+ diff --git a/rp2040-hal/src/spi.rs b/rp2040-hal/src/spi.rs
+index 4da1abc..8ba70ad 100644
+--- a/rp2040-hal/src/spi.rs
++++ b/rp2040-hal/src/spi.rs
+ @@ -518,7 +518,7 @@ macro_rules! impl_write {
+ 
+             fn rx_address_count(&self) -> (u32, u32) {
+                 (
+-                    self.device.sspdr() as *const _ as u32,
++                    self.device.sspdr().as_ptr() as u32,
+                     u32::MAX,
+                 )
+             }
+ @@ -541,7 +541,7 @@ macro_rules! impl_write {
+ 
+             fn tx_address_count(&mut self) -> (u32, u32) {
+                 (
+-                    self.device.sspdr() as *const _ as u32,
++                    self.device.sspdr().as_ptr() as u32,
+                     u32::MAX,
+                 )
+             }
+ diff --git a/rp2040-hal/src/uart/reader.rs b/rp2040-hal/src/uart/reader.rs
+index 0a86431..3a32121 100644
+--- a/rp2040-hal/src/uart/reader.rs
++++ b/rp2040-hal/src/uart/reader.rs
+ @@ -244,7 +244,7 @@ unsafe impl<D: UartDevice, P: ValidUartPinout<D>> ReadTarget for Reader<D, P> {
+     }
+ 
+     fn rx_address_count(&self) -> (u32, u32) {
+-        (self.device.uartdr() as *const _ as u32, u32::MAX)
++        (self.device.uartdr().as_ptr() as u32, u32::MAX)
+     }
+ 
+     fn rx_increment(&self) -> bool {
+         // below `FCS.THRESH`, which requires `FCS.THRESH` not to be 0.
 
-And here with one commit id:
+...
 
-```sh
-wink@3900x 24-12-12T00:14:16.242Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (get-commits)
-$ RUST_LOG=info cargo run .. 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
-     Running `/home/wink/prgs/rust/myrepos/expr-rust-git2/target/debug/get-commits .. 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9`
-[2024-12-12T00:14:18.607701140Z INFO  get_commits   90  1] main:+
-[2024-12-12T00:14:18.607729143Z INFO  get_commits  108  1] arg: 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9
-[2024-12-12T00:14:18.607735044Z INFO  get_commits    6  1] get_commits_between:+ repo_path: .., oid_strings: ["8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9"]
-[2024-12-12T00:14:18.615091908Z INFO  get_commits    8  1] get_commits_between: Repository::open result: is_ok=true
-commit id: 8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9, summary: 'chore: Cleanup clippy warnings', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [7c302d4b9ea64bd6c14da5b5c56bfe1396967fee]
-  file: merge-cmds/src/main.rs
-commit id: 7c302d4b9ea64bd6c14da5b5c56bfe1396967fee, summary: 'feat: merge-cmds running', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [78d0d64a2f08455772c47e1fb5df80d7bf2f1958]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-commit id: 78d0d64a2f08455772c47e1fb5df80d7bf2f1958, summary: 'Add merge-cmds', parent.len: 2, has_patch: true, modified_count 18, non_matching_count: 0, parents: [bc776c430404342d2754bd880406b7af56abb618, 6fabd32f84253674cd6c5f122ed5998201018062]
-  file: merge-cmds/Cargo.lock
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/LICENSE-APACHE
-  file: merge-cmds/LICENSE-MIT
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-  file: .gitignore
-  file: Cargo.lock
-  file: Cargo.toml
-  file: LICENSE-APACHE
-  file: LICENSE-MIT
-  file: README.md
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/README.md
-  file: iterate-over-subdir/src/main.rs
-commit id: 6fabd32f84253674cd6c5f122ed5998201018062, summary: 'restructure-into-merge-cmds', parent.len: 1, has_patch: true, modified_count 13, non_matching_count: 0, parents: [0c26ea66d172b7f6f4e22b4bd12bbf2a401eb18c]
-  file: .gitignore
-  file: Cargo.lock
-  file: Cargo.toml
-  file: LICENSE-APACHE
-  file: LICENSE-MIT
-  file: README.md
-  file: merge-cmds/Cargo.lock
-  file: merge-cmds/Cargo.toml
-  file: merge-cmds/LICENSE-APACHE
-  file: merge-cmds/LICENSE-MIT
-  file: merge-cmds/README.md
-  file: merge-cmds/src/main.rs
-  file: src/main.rs
-commit id: 0c26ea66d172b7f6f4e22b4bd12bbf2a401eb18c, summary: 'feat: Tag as v0.1.0', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [cfeec0b233856b86e547a213a09206be0283c86c]
-  file: README.md
-commit id: cfeec0b233856b86e547a213a09206be0283c86c, summary: 'feat: Add a main.rs that uses various merge_basexxx fn of git2', parent.len: 1, has_patch: true, modified_count 4, non_matching_count: 0, parents: [a666969b6d98f74eb66cbc99f220ec57ca366044]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: README.md
-  file: src/main.rs
-commit id: a666969b6d98f74eb66cbc99f220ec57ca366044, summary: 'feat: Initial Commit', parent.len: 0, has_patch: false, modified_count 0, non_matching_count: 0, parents: []
-commit id: bc776c430404342d2754bd880406b7af56abb618, summary: 'feat: Share dependencies', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [971896646014c778239028407c0848ea631e0b65]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/src/main.rs
-commit id: 971896646014c778239028407c0848ea631e0b65, summary: 'Merge pull request #2 from winksaville/explr-merge-base', parent.len: 2, has_patch: true, modified_count 5, non_matching_count: 0, parents: [985279818e22f81bbcd6860f74df34fca3f04c49, ed61a78b4fd91b6b767a3d92261b1f273e58988f]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-commit id: ed61a78b4fd91b6b767a3d92261b1f273e58988f, summary: 'feat: Add explr-merge-base', parent.len: 1, has_patch: true, modified_count 5, non_matching_count: 0, parents: [985279818e22f81bbcd6860f74df34fca3f04c49]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: explr-merge-base/Cargo.toml
-  file: explr-merge-base/README.md
-  file: explr-merge-base/src/main.rs
-commit id: 985279818e22f81bbcd6860f74df34fca3f04c49, summary: 'docs: Updated/Created README.md files', parent.len: 1, has_patch: true, modified_count 2, non_matching_count: 0, parents: [1ac0ff8b841d5336575122a833f00d7d0798ba2b]
-  file: README.md
-  file: iterate-over-subdir/README.md
-commit id: 1ac0ff8b841d5336575122a833f00d7d0798ba2b, summary: 'Merge pull request #1 from winksaville/actually-iterate-over-commits-not-files', parent.len: 2, has_patch: true, modified_count 4, non_matching_count: 0, parents: [bc5d57ccaa2116fa447a1e86a58d160473817d6d, 86e22f70e8cbae19a41827450d308e1c98c882fb]
-  file: Cargo.lock
-  file: Cargo.toml
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/src/main.rs
-commit id: 86e22f70e8cbae19a41827450d308e1c98c882fb, summary: 'feat: Support root or subdirectories', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [949749479f6f28f2882ead0b315fb7c00ceb412c]
-  file: iterate-over-subdir/src/main.rs
-commit id: 949749479f6f28f2882ead0b315fb7c00ceb412c, summary: 'feat: Iterate over commits', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [fb776b0b1d4a11aefbf0d4fa538a87c50dfa02e1]
-  file: iterate-over-subdir/src/main.rs
-commit id: fb776b0b1d4a11aefbf0d4fa538a87c50dfa02e1, summary: 'chore: Add more logging', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [063e78daf9b97ffea0a1eec02da348a1454b864a]
-  file: iterate-over-subdir/src/main.rs
-commit id: 063e78daf9b97ffea0a1eec02da348a1454b864a, summary: 'feat: Add logging using my custom_logger', parent.len: 1, has_patch: true, modified_count 3, non_matching_count: 0, parents: [8de6748c19d0a5d5b9f17bc29734a93dfe63cee7]
-  file: Cargo.lock
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/src/main.rs
-commit id: 8de6748c19d0a5d5b9f17bc29734a93dfe63cee7, summary: 'feat: Add parameters to iterate-over-subdir to take parameters', parent.len: 1, has_patch: true, modified_count 1, non_matching_count: 0, parents: [83ac0639ae82f157b949b9cfa7883ca13ea46451]
-  file: iterate-over-subdir/src/main.rs
-commit id: 83ac0639ae82f157b949b9cfa7883ca13ea46451, summary: 'feat: Add iterate-over-subdir', parent.len: 1, has_patch: true, modified_count 3, non_matching_count: 0, parents: [bc5d57ccaa2116fa447a1e86a58d160473817d6d]
-  file: Cargo.toml
-  file: iterate-over-subdir/Cargo.toml
-  file: iterate-over-subdir/src/main.rs
-commit id: bc5d57ccaa2116fa447a1e86a58d160473817d6d, summary: 'feat: Initial Commit', parent.len: 0, has_patch: false, modified_count 0, non_matching_count: 0, parents: []
-[2024-12-12T00:14:18.628230781Z INFO  get_commits   76  1] get_commits_between:- repo_path: .., oid_strings: ["8a4c3ac5960b2b879d5e5aeeca4ca2a0aea493b9"]
-[2024-12-12T00:14:18.628265706Z INFO  get_commits  115  1] main:-
-wink@3900x 24-12-12T00:14:18.632Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (get-commits)
+-        while self.len() > 0 {
+-            self.read_from_fifo();
+-        }
++        self.clear();
+         // disable fifo, reset threshold to 0 and disable DMA
+         self.adc
+             .device
+ @@ -696,6 +777,20 @@ impl<'a, Word> AdcFifo<'a, Word> {
+     pub fn dma_read_target(&self) -> DmaReadTarget<Word> {
+         DmaReadTarget(self.adc.device.fifo() as *const _ as u32, PhantomData)
+     }
++
++    /// Trigger a single conversion
++    ///
++    /// Ignored unless in [`AdcFifoBuilder::manual_trigger`] mode.
++    pub fn trigger(&mut self) {
++        self.adc.device.cs().modify(|_, w| w.start_once().set_bit());
++    }
++
++    /// Check if ADC is ready for the next conversion trigger
++    ///
++    /// Only useful in [`AdcFifoBuilder::manual_trigger`] mode.
++    pub fn is_ready(&self) -> bool {
++        self.adc.device.cs().read().ready().bit_is_set()
++    }
+ }
+ 
+ impl<'a> AdcFifo<'a, u16> {
+Diff: parent vs commit_tree END
+commit id: 1f341fd4936c4b41933ec669d97fe0a084fb1bc6, summary: 'Allow free-running ADC mode without FIFO', parent.len: 1, modified_count: 5, non_matching_count: 0, parents: [c11fed9b0dc11f19dc19f89e0c0b79e09c2f65e3]
+  file: rp2040-hal/examples/adc.rs
+  file: rp2040-hal/examples/adc_fifo_dma.rs
+  file: rp2040-hal/examples/adc_fifo_irq.rs
+  file: rp2040-hal/examples/adc_fifo_poll.rs
+  file: rp2040-hal/src/adc.rs
+[2024-12-13T19:59:01.641518575Z INFO  get_commits  181  1] get_commits:- repo_path: /home/wink/prgs/rpi-pico/myrepos/rp-hal, oid_strings: ["a9b91ea50655ace5067da8dec488681c9d53ebae", "c11fed9b0dc11f19dc19f89e0c0b79e09c2f65e3"]
+[2024-12-13T19:59:01.641635595Z INFO  get_commits  210  1] main:-
+wink@3900x 24-12-13T19:59:01.645Z:~/prgs/rust/myrepos/expr-rust-git2/get-commits (gpt4o-take-on-handling-merge-commits)
 ```
 
 
