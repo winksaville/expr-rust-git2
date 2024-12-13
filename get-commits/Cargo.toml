@@ -1,0 +1,10 @@
+[package]
+name = "get-commits"
+version = "0.1.0"
+edition = {workspace = true}
+authors = {workspace = true}
+
+[dependencies]
+git2 = {workspace = true}
+custom_logger = {workspace = true}
+log = {workspace = true}

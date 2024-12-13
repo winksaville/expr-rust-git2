@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "iterate-over-subdir",
-    "explr-merge",
+    "get-commits",
     "merge-cmds",
 ]
 
