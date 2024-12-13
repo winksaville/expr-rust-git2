@@ -1,4 +1,4 @@
-use git2::{Commit, Oid, Repository, Tree};
+use git2::{Commit, DiffFormat, DiffOptions, Oid, Repository, Tree};
 use std::{env, error::Error};
 
 fn collect_diff_files(
@@ -43,20 +43,6 @@ fn create_merged_baseline_tree<'repo>(
         .map(|commit| commit.tree())
         .transpose()?;
 
-    // Log tree IDs
-    println!(
-        "Ancestor Tree ID: {:?}\nOur Tree ID: {:?}\nTheir Tree ID: {:?}",
-        ancestor_tree.as_ref().map(|t| t.id()),
-        our_tree.id(),
-        their_tree.id(),
-    );
-
-    // Log diffs between trees
-    if let Some(ancestor_tree) = ancestor_tree.as_ref() {
-        log_tree_diff(repo, ancestor_tree, &our_tree, "Ancestor vs. Ours")?;
-        log_tree_diff(repo, ancestor_tree, &their_tree, "Ancestor vs. Theirs")?;
-    }
-
     // Perform the merge
     let mut merge_index = repo.merge_trees(
         ancestor_tree.as_ref().ok_or("No common ancestor found")?,
@@ -68,16 +54,6 @@ fn create_merged_baseline_tree<'repo>(
     // Write the result of the merge to a tree
     let merged_tree = repo.find_tree(merge_index.write_tree_to(repo)?)?;
 
-    // Log diff between ancestor and merge result
-    if let Some(ancestor_tree) = ancestor_tree.as_ref() {
-        log_tree_diff(
-            repo,
-            ancestor_tree,
-            &merged_tree,
-            "Ancestor vs. Merge Result",
-        )?;
-    }
-
     Ok(merged_tree)
 }
 
@@ -88,27 +64,39 @@ fn log_tree_diff(
     label: &str,
 ) -> Result<(), Box<dyn Error>> {
     println!("Diff: {label}");
-    let diff = repo.diff_tree_to_tree(Some(from_tree), Some(to_tree), None)?;
 
-    diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
-        println!(
-            "  File: {:?} -> {:?} | Status: {:?}",
-            delta.old_file().path().map(|p| p.to_string_lossy()),
-            delta.new_file().path().map(|p| p.to_string_lossy()),
-            delta.status()
-        );
+    // Create and configure DiffOptions
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .include_ignored(false)
+        .context_lines(3)
+        .recurse_untracked_dirs(true) // To include untracked directories
+        .include_unmodified(false);
 
-        if let Some(hunk) = hunk {
-            println!("    Hunk: {}", String::from_utf8_lossy(hunk.header()));
-        }
+    let diff = repo.diff_tree_to_tree(Some(from_tree), Some(to_tree), Some(&mut opts))?;
 
+    // Print the diff in Patch format with prefixes
+    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
+        // Prefix for added/removed/unchanged lines
+        let prefix = match line.origin() {
+            '+' => "+", // Line added
+            '-' => "-", // Line removed
+            ' ' => " ", // Unchanged line
+            '@' => "@", // Hunk header
+            _ => " ",   // Fallback for other types
+        };
+
+        // Print the prefixed line
         print!(
-            "{}",
+            "{}{}",
+            prefix,
             std::str::from_utf8(line.content()).unwrap_or("[INVALID UTF-8]")
         );
+
         true
     })?;
 
+    println!("Diff: {label} END");
     Ok(())
 }
 
@@ -122,6 +110,12 @@ fn process_commit(repo: &Repository, commit: &Commit) -> Result<(), Box<dyn Erro
     if parents.len() > 1 {
         // Handle merge commits
         let merged_baseline_tree = create_merged_baseline_tree(repo, &parents)?;
+        let _ = log_tree_diff(
+            repo,
+            &merged_baseline_tree,
+            &commit_tree,
+            "merged_baseline_tree vs commit_tree",
+        );
         collect_diff_files(
             repo,
             Some(&merged_baseline_tree),
@@ -132,6 +126,7 @@ fn process_commit(repo: &Repository, commit: &Commit) -> Result<(), Box<dyn Erro
     } else if let Some(parent) = parents.first() {
         // Handle non-merge commits
         let parent_tree = parent.tree()?;
+        let _ = log_tree_diff(repo, &parent_tree, &commit_tree, "parent vs commit_tree");
         collect_diff_files(
             repo,
             Some(&parent_tree),
